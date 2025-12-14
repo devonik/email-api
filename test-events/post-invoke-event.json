@@ -1,0 +1,6 @@
+{
+  "FunctionName": "arn:aws:lambda:eu-central-1:177011103114:function:email-api-dev",
+  "Payload": "{\"emailTemplate\":\"order-confirmation-staging\",\"destinationAddress\":\"p.bolten+test@heiland.com\",\"templateData\":{\"orderNumber\":\"1234\",\"supplierOrders\":[{\"name\":\"Testshortname\",\"imageUrl\":\"https://via.placeholder.com/150\",\"lineItems\":[{\"name\":\"product1\",\"quantity\":\"3\"}],\"customerReference\":\"1234\",\"customerReferenceString\":\"1234\"},{\"name\":\"Testshortname2\",\"imageUrl\":\"https://via.placeholder.com/150\",\"lineItems\":[{\"name\":\"product1\",\"quantity\":\"3\"}],\"customerReference\":\"1234\",\"customerReferenceString\":\"1234\"}]}}",
+  "InvocationType": "RequestResponse",
+  "Qualifier": "active"
+}

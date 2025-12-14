@@ -1,0 +1,342 @@
+# The AWSTemplateFormatVersion identifies the capabilities of the template
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  sam app to send emails
+
+# Transform section specifies one or more macros that AWS CloudFormation uses to process your template
+Transform:
+  - AWS::Serverless-2016-10-31
+
+Parameters:
+  ParamShortRegion:
+    Type: String
+  ParamStage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Which environment do you want to deploy to? (dev,staging,prod)
+  ParamCountry:
+    Type: String
+  ParamSlackLambdaWebhookUrl:
+    Type: String
+  ParamEmailApiStateMachine:
+    Type: String
+  ParamKmsKeyArn:
+    Type: String
+  ParamEmailApiDomainPattern:
+    Type: String
+  ParamCertificateArn:
+    Type: String
+  ParamEmailApiApiKey:
+    Type: String
+  ParamLambdaIamRole:
+    Type: String
+  ParamEmailApiEmailLabel:
+    Type: String
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    AutoPublishAlias: active
+    Environment:
+      Variables:
+        STAGE: !Ref ParamStage
+        LOG_SLACK_WEBHOOK_URL: !Ref ParamSlackLambdaWebhookUrl
+        COUNTRY: !Ref ParamCountry
+        STATE_MACHINE_ARN: !Ref ParamEmailApiStateMachine
+        NODE_OPTIONS: "--enable-source-maps"
+        SENDER_EMAIL_LABEL: !Ref ParamEmailApiEmailLabel
+
+    VpcConfig:
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub ${AWS::Region}-aws-setup-security-groups-${ParamStage}-${ParamStage}-SgLambda
+      SubnetIds:
+        - Fn::ImportValue: !Sub "${AWS::Region}-aws-setup-vpc-${ParamStage}-LambdaPrivateSubnet0"
+        - Fn::ImportValue: !Sub "${AWS::Region}-aws-setup-vpc-${ParamStage}-LambdaPrivateSubnet1"
+        - Fn::ImportValue: !Sub "${AWS::Region}-aws-setup-vpc-${ParamStage}-LambdaPrivateSubnet2"
+    MemorySize: 1024
+    Timeout: 100
+    KmsKeyArn: !Ref ParamKmsKeyArn
+
+# Resources declares the AWS resources that you want to include in the stack
+Resources:
+  # Build the API Gateway and setup an API Key
+  ApiGatewayEndpoint:
+    Type: "AWS::Serverless::Api"
+    Properties:
+      StageName: !Ref ParamStage
+      Variables:
+        lambdaAlias: active
+      Domain:
+        DomainName: !Ref ParamEmailApiDomainPattern
+        CertificateArn: !Ref ParamCertificateArn
+      Auth:
+        ApiKeyRequired: true
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: [ApiUsagePlan]
+    Properties:
+      Name: !Sub "${AWS::StackName}-apikey"
+      Description: "CloudFormation API Key V1"
+      Enabled: true
+      GenerateDistinctId: false
+      Value: !Ref ParamEmailApiApiKey
+      StageKeys:
+        - RestApiId: !Ref ApiGatewayEndpoint
+          StageName: !Ref ParamStage
+  ApiUsagePlan:
+    Type: "AWS::ApiGateway::UsagePlan"
+    DependsOn:
+      - ApiGatewayEndpointStage
+    Properties:
+      ApiStages:
+        - ApiId: !Ref ApiGatewayEndpoint
+          Stage: !Ref ParamStage
+      Description: !Sub "${AWS::StackName} usage plan"
+      UsagePlanName: !Sub "${AWS::StackName}-usage-plan"
+  ApiUsagePlanKey:
+    Type: "AWS::ApiGateway::UsagePlanKey"
+    DependsOn:
+      - ApiGatewayEndpoint
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
+  EmailPost:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !Ref ParamLambdaIamRole
+      FunctionName: !Sub "email-api-${ParamStage}-post"
+      Handler: src/email/handlers/post/handler.handleRequest
+      Description: A Lambda function that provides post endpoint for sending emails
+      AutoPublishAliasAllProperties: true
+      Events:
+        HttpApiPostMethod:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayEndpoint
+            Path: /
+            Method: POST
+      LoggingConfig:
+        ApplicationLogLevel: "INFO"
+        LogFormat: "JSON"
+        LogGroup: !Ref "LogGroupPost"
+        SystemLogLevel: "INFO"
+  EmailSchedulePost:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !Ref ParamLambdaIamRole
+      FunctionName: !Sub "email-api-${ParamStage}-schedule-post"
+      Handler: src/email/handlers/schedule-post.handler
+      Description: A Lambda function that provides post endpoint to schedule email
+      AutoPublishAliasAllProperties: true
+      Events:
+        HttpApiPostMethod:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayEndpoint
+            Path: /schedule
+            Method: POST
+      LoggingConfig:
+        ApplicationLogLevel: "INFO"
+        LogFormat: "JSON"
+        LogGroup: !Ref "LogGroupSchedulePost"
+        SystemLogLevel: "INFO"
+  EmailScheduleDelete:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !Ref ParamLambdaIamRole
+      FunctionName: !Sub "email-api-${ParamStage}-schedule-delete"
+      Handler: src/email/handlers/schedule-delete.handler
+      Description: A Lambda function that provides delete endpoint to schedule email
+      AutoPublishAliasAllProperties: true
+      Events:
+        HttpApiPostMethod:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayEndpoint
+            Path: /schedule/{executionArn}
+            Method: DELETE
+      LoggingConfig:
+        ApplicationLogLevel: "INFO"
+        LogFormat: "JSON"
+        LogGroup: !Ref "LogGroupScheduleDelete"
+        SystemLogLevel: "INFO"
+
+  StepFunctionExecRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                  - "logs:CreateLogDelivery"
+                  - "logs:GetLogDelivery"
+                  - "logs:UpdateLogDelivery"
+                  - "logs:DeleteLogDelivery"
+                  - "logs:ListLogDeliveries"
+                  - "logs:PutResourcePolicy"
+                  - "logs:DescribeResourcePolicies"
+                  - "logs:DescribeLogGroups"
+                Resource: "*"
+
+  StateMachineLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/vendedlogs/states/email-api-${ParamStage}-EmailStateMachine-Logs"
+      RetentionInDays: 30
+  EmailStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub "email-api-${ParamStage}-EmailStateMachine"
+      Definition:
+        StartAt: WaitForExecutionDate
+        States:
+          WaitForExecutionDate:
+            Type: Wait
+            TimestampPath: "$.executionDate"
+            Next: SendEmail
+          SendEmail:
+            Type: Task
+            Resource: !GetAtt EmailPost.Arn
+            End: true
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogs.Arn
+        IncludeExecutionData: true
+        Level: ALL
+      Role: !GetAtt StepFunctionExecRole.Arn
+
+  LogGroupPost:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ParamStage}-${ParamShortRegion}-monitoring-email-api-post-lambda"
+      RetentionInDays: 60
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-post-lambda"
+
+  MetricFilterPost:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-post-filter"
+      FilterPattern: "?error ?ERROR ?excpetion ?Exception ?EXCEPTION ?Fail ?fail ?FAIL ?FATAL ?fatal ?Fatal"
+      LogGroupName: !Ref "LogGroupPost"
+      MetricTransformations:
+        - MetricName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-post-filter"
+          MetricNamespace: "LogMetrics"
+          MetricValue: 1
+
+  AlarmPost:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-post-alert"
+      Namespace: LogMetrics
+      MetricName: !Ref "MetricFilterPost"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: ignore
+      AlarmActions:
+        - !Sub "arn:aws:sns:${AWS::Region}:177011103114:webshop-monitoring-${ParamStage}"
+
+  LogGroupSchedulePost:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-post-lambda"
+      RetentionInDays: 60
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-post-lambda"
+
+  MetricFilterSchedulePost:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-post-filter"
+      FilterPattern: "?error ?ERROR ?excpetion ?Exception ?EXCEPTION ?Fail ?fail ?FAIL ?FATAL ?fatal ?Fatal"
+      LogGroupName: !Ref "LogGroupSchedulePost"
+      MetricTransformations:
+        - MetricName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-post-filter"
+          MetricNamespace: "LogMetrics"
+          MetricValue: 1
+
+  AlarmSchedulePost:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-post-alert"
+      Namespace: LogMetrics
+      MetricName: !Ref "MetricFilterSchedulePost"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: ignore
+      AlarmActions:
+        - !Sub "arn:aws:sns:${AWS::Region}:177011103114:webshop-monitoring-${ParamStage}"
+
+  LogGroupScheduleDelete:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-delete-lambda"
+      RetentionInDays: 60
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-delete-lambda"
+
+  MetricFilterScheduleDelete:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-delete-filter"
+      FilterPattern: "?error ?ERROR ?excpetion ?Exception ?EXCEPTION ?Fail ?fail ?FAIL ?FATAL ?fatal ?Fatal"
+      LogGroupName: !Ref "LogGroupScheduleDelete"
+      MetricTransformations:
+        - MetricName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-delete-filter"
+          MetricNamespace: "LogMetrics"
+          MetricValue: 1
+
+  AlarmScheduleDelete:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ParamStage}-${ParamShortRegion}-monitoring-email-api-schedule-delete-alert"
+      Namespace: LogMetrics
+      MetricName: !Ref "MetricFilterScheduleDelete"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: ignore
+      AlarmActions:
+        - !Sub "arn:aws:sns:${AWS::Region}:177011103114:webshop-monitoring-${ParamStage}"
+
+Outputs:
+  ApiGateway:
+    Description: "API Gateway endpoint URL for staging / prod stage. The stage is defined via CI/CD pipeline (see bitbucket-pipelines.yml)"
+    Value: !Sub "https://${ApiGatewayEndpoint}.execute-api.${AWS::Region}.amazonaws.com/${ParamStage}/"
+    Export:
+      Name: !Sub "${AWS::Region}-${AWS::StackName}-ApiGatewayUrl"
+  ApiKey:
+    Description: "You can find your API Key in the AWS console: (Put in the request HEADER as 'x-api-key')"
+    Value: !Sub "https://console.aws.amazon.com/apigateway/home?region=${AWS::Region}#/api-keys/${ApiKey}"
+    Export:
+      Name: !Sub "${AWS::Region}-${AWS::StackName}-ApiKey"

@@ -1,0 +1,9 @@
+{
+  "pathParameters": {
+    "executionArn": "arn:aws:states:eu-central-1:177011103114:execution:email-api-staging-EmailStateMachine:d6be7e3a-04c9-4387-8c7b-306343638182"
+  },
+  "resource": "/{proxy+}",
+  "path": "/path/to/resource",
+  "httpMethod": "DELETE",
+  "isBase64Encoded": false
+}

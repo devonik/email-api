@@ -1,0 +1,7 @@
+{
+  "body": "{\"executionDate\":\"2023-12-21T20:45:00Z\",\"emailTemplate\":\"otherappointmentpatientconfirmation\",\"templateData\":{\"clinicName\":\"Testclinic\",\"appointmentStartWeekday\":\"Montag\",\"appointmentStartDate\":\"01.01.1970\",\"appointmentStartTime\":\"23:59\",\"appointmentReasonAdditional\":\"Diesisteintest\"},\"destinationAddress\":\"nik@heiland.com\"}",
+  "resource": "/{proxy+}",
+  "path": "/path/to/resource",
+  "httpMethod": "POST",
+  "isBase64Encoded": false
+}

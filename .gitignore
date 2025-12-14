@@ -1,0 +1,8 @@
+node_modules
+*.zip
+
+.aws-sam
+.idea
+
+#auto-changelog debug json
+changelog-data.json

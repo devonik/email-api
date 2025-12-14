@@ -1,0 +1,7 @@
+{
+  "body": "{\"sendingEmailAddress\":\"mail+staging@heiland.com\",\"emailTemplate\":\"DEV-OrderChange\",\"destinationAddress\":\"p.bolten+test@heiland.com\",\"messageTag\":{\"email-api-tracking\":\"supplier-order-change\"},\"templateData\":{\"supplier\":{\"name\":\"Heiland\"},\"customer\":{\"clinicName\":\"Harambe Clinic\"},\"masterOrder\":{\"date\":\"15.02.2024\",\"time\":\"09:20\",\"handle\":\"PSPKJVIW\"},\"orders\":[{\"reference\":\"999\",\"referenceType\":\"Praxis\",\"lineItems\":[{\"quantity\":1,\"name\":\"HippoCare Ulcequin 3,5kg\",\"statusInfo\":\"\"},{\"quantity\":1,\"name\":\"HippoCare Sekrolyt 600g\",\"statusInfo\":\"\"},{\"quantity\":1,\"name\":\"Dasuquin Kautabletten L ab 25 kg\",\"statusInfo\":\"\"}]}]}}",
+  "resource": "/{proxy+}",
+  "path": "/path/to/resource",
+  "httpMethod": "POST",
+  "isBase64Encoded": false
+}

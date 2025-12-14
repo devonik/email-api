@@ -1,0 +1,37 @@
+{
+  "name": "email-api",
+  "version": "0.0.19",
+  "dependencies": {
+    "@aws-sdk/client-ses": "^3.478.0",
+    "@aws-sdk/client-sfn": "^3.478.0",
+    "@aws-sdk/credential-provider-node": "^3.478.0",
+    "@heiland/lambda-lib-aws": "workspace:*",
+    "@heiland/lambda-lib-helper": "workspace:*",
+    "axios": "^0.21.4",
+    "handlebars": "^4.7.7",
+    "ics": "^2.37.0",
+    "json2csv": "^5.0.7",
+    "moment": "^2.29.4",
+    "nodemailer": "^6.7.7"
+  },
+  "devDependencies": {
+    "@heiland/cli": "workspace:*",
+    "@heiland/dev-server": "workspace:*",
+    "eslint-config-heiland": "workspace:*",
+    "jest": "^26.6.3"
+  },
+  "license": "UNLICENSED",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "build-lambda": "heiland build-lambda",
+    "clean": "npx rimraf .aws-sam",
+    "dev": "heiland dev-server connect --build email-api",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test-post": "sam local invoke \"EmailPost\" --env-vars ./test-events/env.json -e ./test-events/post.json",
+    "test-schedule-delete": "sam local invoke \"EmailScheduleDelete\" --env-vars ./test/env.json -e ./test/schedule-delete.json",
+    "test-schedule-post": "sam local invoke \"EmailSchedulePost\" --env-vars ./test/env.json -e ./test/schedule-post.json",
+    "validate": "sam validate --lint"
+  }
+}
